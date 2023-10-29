@@ -1,0 +1,279 @@
+--- 
+title: "La primera aplicación" 
+author: "Mateo Vega"
+format:
+  html:
+    embed-resources: true
+---
+
+# Introducción
+
+Hay dos componentes en todas aplicación: el UI (user interface) y la función server. Shiny usa programación reactiva para actualizar las salidas cada vez que se tengan nuevas entradas.
+
+## Crear el directorio de la aplicación y archivo
+
+La forma más sencilla es crear un nuevo directorio para la aplicación y poner un archivo llamada `app.R`. Este archivo le dice a Shiny como se debe ver y comportar la aplicación.
+
+la primera aplicación es:
+
+```{r}
+library(shiny)
+
+ui <- fluidPage(
+  'Hola mundo!'
+)
+
+server <- function(input, output, session) {
+  
+}
+
+# shinyApp(ui, server)
+```
+Esta aplicación hace cuatro cosas:
+
+1. Llama la libreria Shiny.
+1. Define la interfaz del usuario, este es el HTML con el que el usuario interactua.
+1. Especifica el comportamiento de la aplicación definiendo un `server`.
+1. Ejecuta `shinyApp(ui, server)` para construir y empezar la aplicación.
+
+## Agregando controles de UI
+
+Ahora se incluyen inputs y outputs, se va a construir una aplicación que muestre todos los data frames incluidos en el paquete `datasets`. Para eso cambiamos la UI:
+
+```{r}
+ui = fluidPage(
+  selectInput('dataset', label = 'dataset', choices = ls('package:datasets')),
+  verbatimTextOutput('summary'),
+  tableOutput('table')
+)
+
+# shinyApp(ui, server)
+```
+
+Aquí se usan cuatro nuevas funciones:
+
+1. `fluidPage()` es una función **layout** la cual inicia la estructura visual básica de la página.
+1. `selectInput()` es una entrada de control que permite al usuario interactuar con la aplicación dando un valor.
+1. `verbatimTextOutput()` y `tableOutput()` son controles de salida que le dicen a Shiny donde poner salidas renderizadas.
+
+Todas estas funciones generan el HTML. Todavía no vemos ninguna salida ya que tenemos que decirle a Shiny como las entradas y las salidas se relacionan.
+
+## Agregando comportamiento
+
+Ahora mostramos los outputs definiendolos en la función server.
+
+Shiny usa programación reactiva para hacer las aplicaciones interactivas. Ahora le decimos a Shiny como llenar las salidas `summary` y `table`.
+
+```{r}
+server = function(input, output, session) {
+  output$summary = renderPrint({
+    dataset = get(input$dataset, 'package:datasets')
+    summary(dataset)
+  })
+  
+  output$table = renderTable({
+    dataset = get(input$dataset, 'package:datasets')
+    dataset
+  })
+}
+
+# shinyApp(ui, server)
+```
+
+
+A la izquierda de `=` tenemos `output$ID`, indica que estamos dando la receta para la salida de Shiny con ese ID. A la derecha usamos una **función de renderizado**, cada `render{type}` está diseñado para producir un tipo de salida y está unido a un `{type}output`, por ejemplo en esta aplicación `renderPrint()` está unido a `verbatimTextOutput()`.
+
+El summary y la tabla se actualizan cada vez que se cambia el dataset de entrada. Esta dependencia se crea porque nos referimos a `input$dataset` dentro de la función salida. `input$datset` cambia cada vez que se escoge otro dataset. Esta es la esencia de la reactividad.
+
+
+## Reducir duplicación con expresiones reactivas
+
+En la aplicación anterior tenemos código duplicado:
+
+```{r}
+#| eval: False
+
+dataset = get(input$dataset, 'package:datasets')
+```
+Para evitar código duplicado y las dificultades que este trae, en el contexto de Shiny usamos **expresiones reactivas**.
+
+Se crea una expresión reactiva envolviendo un bloque de código en `reactive({...})` y asignandolo a una variable, luego se puede usar la expresión reactiva llamandola como una función. Esta expresión reactiva solo corre la primera vez que es llamada, guarda el resultado en caché hasta que necesite actualizarlo.
+
+Ahora se actualiza el server usando la expresión reactiva:
+
+```{r}
+server = function(input, output, session) {
+  # crear la expresión reactiva
+  dataset = reactive({
+    get(input$dataset, 'package:datasets')
+  })
+  
+  output$summary = renderPrint({
+    # se usa la expresión reactiva llamandola como una función
+    summary(dataset())
+  })
+  
+  output$table = renderTable({
+    dataset()
+  })
+}
+
+# shinyApp(ui, server)
+```
+
+## Ejercicios 
+
+1. Crear una aplicación que salude al usuario por su nombre
+
+```{r}
+ui = fluidPage(
+  textInput("name", "What's your name?"),
+  textOutput("greeting")
+)
+
+server = function(input, output, session) {
+  output$greeting <- renderText({
+  paste0("Hello ", input$name)
+  })
+}
+
+# shinyApp(ui, server)
+```
+2. Se quiere hacer una aplicación que permita al usuario establecer un numero (x) entre 1 y 50, luego mostrar el número multiplicado por 5, este es su primer intento:
+
+```{r}
+ui <- fluidPage(
+  sliderInput("x", label = "If x is", min = 1, max = 50, value = 30),
+  "then x times 5 is",
+  textOutput("product")
+)
+
+server <- function(input, output, session) {
+  output$product <- renderText({ 
+    x * 5
+  })
+}
+
+# shinyApp(ui, server)
+```
+Pero tiene un error: objeto x no encontrado, como se arregla?
+
+```{r}
+ui <- fluidPage(
+  sliderInput("x", label = "If x is", min = 1, max = 50, value = 30),
+  "then x times 5 is",
+  textOutput("product")
+)
+
+server <- function(input, output, session) {
+  output$product <- renderText({ 
+    input$x * 5                                 # aquí faltaba hacer input$ID
+  })
+}
+
+# shinyApp(ui, server)
+```
+3. Extender la aplicación anterior con otro slider para el multiplicador y mostrar el valor de `x * y`.
+
+```{r}
+ui <- fluidPage(
+  sliderInput("x", label = "Si x es", min = 1, max = 50, value = 30),
+  sliderInput('y', label = 'Y y es', min = 1, max = 50, value = 30),
+  "Entonces x multiplicado por y es",
+  textOutput("product")
+)
+
+server <- function(input, output, session) {
+  output$product <- renderText({ 
+    input$x * input$y                                 
+  })
+}
+
+# shinyApp(ui, server)
+```
+
+4. Qué agrega esta?
+
+```{r}
+ui <- fluidPage(
+  sliderInput("x", "If x is", min = 1, max = 50, value = 30),
+  sliderInput("y", "and y is", min = 1, max = 50, value = 5),
+  "then, (x * y) is", textOutput("product"),
+  "and, (x * y) + 5 is", textOutput("product_plus5"),
+  "and (x * y) + 10 is", textOutput("product_plus10")
+)
+
+server <- function(input, output, session) {
+  output$product <- renderText({ 
+    product <- input$x * input$y
+    product
+  })
+  output$product_plus5 <- renderText({ 
+    product <- input$x * input$y
+    product + 5
+  })
+  output$product_plus10 <- renderText({ 
+    product <- input$x * input$y
+    product + 10
+  })
+}
+
+# shinyApp(ui, server)
+```
+En esta aplicación se incluyen dos outputs de ltext mostrandoel producto + 5 y el producto + 10.
+
+5. Hay tres bugs en el siguiente código
+
+```{r}
+datasets <- c("economics", "faithfuld", "seals")
+ui <- fluidPage(
+  selectInput("dataset", "Dataset", choices = datasets),
+  verbatimTextOutput("summary"),
+  tableOutput("plot")
+)
+
+server <- function(input, output, session) {
+  dataset <- reactive({
+    get(input$dataset, "package:ggplot2")
+  })
+  output$summmry <- renderPrint({
+    summary(dataset())
+  })
+  output$plot <- renderPlot({
+    plot(dataset)
+  }, res = 96)
+}
+
+# shinyApp(ui, server)
+```
+
+```{r}
+library(ggplot2)
+
+datasets <- c("economics", "faithfuld", "seals")
+ui <- fluidPage(
+  selectInput("dataset", "Dataset", choices = datasets),
+  verbatimTextOutput("summary"),
+  plotOutput("plot")                                    # aqui hay que escoger plotOutput ya que es una gráfica     
+  )
+
+server <- function(input, output, session) {
+  dataset <- reactive({
+    get(input$dataset, "package:ggplot2")
+  })
+  output$summary <- renderPrint({                      # está escrito summry, es summary
+    summary(dataset())
+  })
+  output$plot <- renderPlot({
+    plot(dataset())                                    # falta llamar dataset como una funcion dataset()
+  }, res = 96)
+}
+
+# shinyApp(ui, server)
+```
+
+
+
+
+
+
